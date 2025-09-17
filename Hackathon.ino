@@ -12,8 +12,6 @@
 #include "MotionData.h"
 #include "RTC.h"
 
-
-
 GPSdata gpsData(GPS_RX_PIN, GPS_TX_PIN);
 SDDataLogger sdLogger(SD_CS_PIN);
 MotionData motionData(MPU9250_CS_PIN);
@@ -83,7 +81,11 @@ void loop() {
     Serial.println(rtc.getFormattedTime());
 
     sdLogger.open();
-    String logEntry = String(rtc.getFormattedTime()) + ": " + String(gpsData.latitude(), 6) + "," + String(gpsData.longitude(), 6);
+    String logEntry = rtc.getFormattedDateTime() + "," + 
+                      String(gpsData.latitude(), 6) + "," + 
+                      String(gpsData.longitude(), 6) + "," +
+                      String(ax) + "," + String(ay) + "," + String(az) + "," +
+                      String(gx) + "," + String(gy) + "," + String(gz);
     if (sdLogger.log(logEntry)) {
         Serial.println("Logged to SD: " + logEntry);
     } else {

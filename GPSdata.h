@@ -1,3 +1,6 @@
+#ifndef GPSDATA_H
+#define GPSDATA_H
+
 #include <SoftwareSerial.h>
 #include <TinyGPSPlus.h>
 
@@ -33,3 +36,5 @@ public:
         return gps.location.lng();
     }
 };
+
+#endif // GPSDATA_H

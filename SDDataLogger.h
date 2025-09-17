@@ -1,3 +1,6 @@
+#ifndef SDDATALOGGER_H
+#define SDDATALOGGER_H
+
 #include <SD.h>
 #include <Arduino.h>
 
@@ -59,3 +62,5 @@ public:
         close();
     }
 };
+
+#endif // SDDATALOGGER_H
