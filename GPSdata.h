@@ -14,8 +14,8 @@ private:
 public:
     GPSdata(int rx, int tx) : rxPin(rx), txPin(tx), ss(rx, tx) {}
 
-    void begin(long baud = 9600) {
-        ss.begin(baud);
+    bool begin(long baud = 9600) {
+        return ss.begin(baud);
     }
 
     void update() {

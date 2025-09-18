@@ -17,6 +17,7 @@
 // MPU-9250 Registers
 #define MPU9250_WHO_AM_I      0x75
 #define MPU9250_PWR_MGMT_1    0x6B
+#define MPU9250_PWR_MGMT_2    0x6C
 #define MPU9250_ACCEL_XOUT_H  0x3B
 #define MPU9250_GYRO_XOUT_H   0x43
 #define MPU9250_GYRO_CONFIG   0x1B
@@ -33,6 +34,10 @@ public:
 
 private:
     uint8_t _csPin;
+
+    // MotionData 클래스 내부에 오프셋 저장 변수 추가
+    float _accelBiasX = 0, _accelBiasY = 0, _accelBiasZ = 0;
+    float _gyroBiasX = 0, _gyroBiasY = 0, _gyroBiasZ = 0;
 
 #ifndef USE_SOFT_SPI
     SPIClass* _spi;
@@ -72,17 +77,73 @@ bool MotionData::begin() {
 #endif
 
     // Reset and initialize MPU-9250
-    writeRegister(MPU9250_PWR_MGMT_1, 0x80); // Reset
+    writeRegister(MPU9250_PWR_MGMT_1, 0x80); // Reset 10000000
     delay(100);
-    writeRegister(MPU9250_PWR_MGMT_1, 0x01); // Wake up
+    writeRegister(MPU9250_PWR_MGMT_1, 0x01); // Wake up 00000001
     delay(10);
+    writeRegister(MPU9250_PWR_MGMT_2, 0x00); // Enable all sensors
     writeRegister(MPU9250_GYRO_CONFIG, 0x00); // ±250 dps
     writeRegister(MPU9250_ACCEL_CONFIG, 0x00); // ±2g
 
-    // Optional: Check WHO_AM_I
+    // // Optional: Check WHO_AM_I
     uint8_t whoami = readRegister(MPU9250_WHO_AM_I);
-    Serial.print("MPU9250 WHO_AM_I: 0x");
-    Serial.println(whoami, HEX);
+    // Serial.print("MPU9250 WHO_AM_I: 0x");
+    // Serial.println(whoami, HEX);
+    if (whoami != 0x71) { // 0x71 is the expected value for MPU-9250
+        return false;
+    }
+
+    uint8_t buf[6];
+    readRegisters(0x00, buf, 3);
+    readRegisters(0x0D, buf + 3, 3);
+    Serial.print("Self-test raw data(Gyro, Accel): ");
+    for (int i = 0; i < 6; i++) {
+        Serial.print(buf[i], HEX);
+        Serial.print(" ");
+    }
+    Serial.println();
+
+    Serial.print("Gryo Self Test reg: ");
+    Serial.println(readRegister(0x1C));
+
+
+#ifdef USE_CALIBRATE_MPU9250
+
+    // Calibration: collect samples while device is still
+    const int samples = 200;
+    long accX = 0, accY = 0, accZ = 0;
+    long gyrX = 0, gyrY = 0, gyrZ = 0;
+
+    for (int i = 0; i < samples; i++) {
+        uint8_t buf[6];
+        
+        // Read raw accel
+        readRegisters(MPU9250_ACCEL_XOUT_H, buf, 6);
+        int16_t ax = (buf[0] << 8) | buf[1];
+        int16_t ay = (buf[2] << 8) | buf[3];
+        int16_t az = (buf[4] << 8) | buf[5];
+        accX += ax; accY += ay; accZ += az;
+
+        // Read raw gyro
+        readRegisters(MPU9250_GYRO_XOUT_H, buf, 6);
+        int16_t gx = (buf[0] << 8) | buf[1];
+        int16_t gy = (buf[2] << 8) | buf[3];
+        int16_t gz = (buf[4] << 8) | buf[5];
+        gyrX += gx; gyrY += gy; gyrZ += gz;
+
+        delay(5);
+    }
+
+    _accelBiasX = (float)accX / samples / 16384.0f;
+    _accelBiasY = (float)accY / samples / 16384.0f;
+    // Z축은 중력가속도(1g = 9.8m/s^2 ≈ 1.0) 보정
+    _accelBiasZ = (float)accZ / samples / 16384.0f - 1.0f;
+
+    _gyroBiasX = (float)gyrX / samples / 131.0f;
+    _gyroBiasY = (float)gyrY / samples / 131.0f;
+    _gyroBiasZ = (float)gyrZ / samples / 131.0f;
+
+#endif // USE_CALIBRATE_MPU9250
 
     return true;
 }
@@ -174,23 +235,39 @@ void MotionData::readRegisters(uint8_t reg, uint8_t* buffer, uint8_t length) {
 void MotionData::readAccel(float &ax, float &ay, float &az) {
     uint8_t buf[6];
     readRegisters(MPU9250_ACCEL_XOUT_H, buf, 6);
+    // debugging print buf values
+    Serial.print("Accel raw: ");
+    for (int i = 0; i < 6; i++) {
+        Serial.print(buf[i], HEX);
+        Serial.print(" ");
+    }
+    Serial.println();
+
     int16_t x = (buf[0] << 8) | buf[1];
     int16_t y = (buf[2] << 8) | buf[3];
     int16_t z = (buf[4] << 8) | buf[5];
-    ax = x / 16384.0f;
-    ay = y / 16384.0f;
-    az = z / 16384.0f;
+    ax = x / 16384.0f - _accelBiasX;
+    ay = y / 16384.0f - _accelBiasY;
+    az = z / 16384.0f - _accelBiasZ;
 }
 
 void MotionData::readGyro(float &gx, float &gy, float &gz) {
     uint8_t buf[6];
     readRegisters(MPU9250_GYRO_XOUT_H, buf, 6);
+    // debugging print buf values
+    Serial.print("Gyro raw: ");
+    for (int i = 0; i < 6; i++) {
+        Serial.print(buf[i], HEX);
+        Serial.print(" ");
+    }
+    Serial.println();
+
     int16_t x = (buf[0] << 8) | buf[1];
     int16_t y = (buf[2] << 8) | buf[3];
     int16_t z = (buf[4] << 8) | buf[5];
-    gx = x / 131.0f;
-    gy = y / 131.0f;
-    gz = z / 131.0f;
+    gx = x / 131.0f - _gyroBiasX;
+    gy = y / 131.0f - _gyroBiasY;
+    gz = z / 131.0f - _gyroBiasZ;
 }
 
 #endif // MOTIONDATA_H
