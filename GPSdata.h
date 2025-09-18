@@ -10,31 +10,14 @@ private:
     const int txPin;
     SoftwareSerial ss;
     TinyGPSPlus gps;
-
 public:
     GPSdata(int rx, int tx) : rxPin(rx), txPin(tx), ss(rx, tx) {}
 
-    bool begin(long baud = 9600) {
-        return ss.begin(baud);
-    }
-
-    void update() {
-        while (ss.available() > 0) {
-            gps.encode(ss.read());
-        }
-    }
-
-    bool locationUpdated() {
-        return gps.location.isUpdated();
-    }
-
-    double latitude() {
-        return gps.location.lat();
-    }
-
-    double longitude() {
-        return gps.location.lng();
-    }
+    bool begin(long);
+    void update();
+    bool locationUpdated();
+    double latitude();
+    double longitude();
 };
 
 #endif // GPSDATA_H
