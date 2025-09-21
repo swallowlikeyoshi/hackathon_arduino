@@ -34,22 +34,22 @@ bool MotionData::begin() {
     uint8_t whoami = readRegister(MPU9250_WHO_AM_I);
     // Serial.print("MPU9250 WHO_AM_I: 0x");
     // Serial.println(whoami, HEX);
-    if (whoami != 0x71) { // 0x71 is the expected value for MPU-9250
-        return false;
-    }
+    // if (whoami != 0x71) { // 0x71 is the expected value for MPU-9250
+    //     return false;
+    // }
 
-    uint8_t buf[6];
-    readRegisters(0x00, buf, 3);
-    readRegisters(0x0D, buf + 3, 3);
-    Serial.print("Self-test raw data(Gyro, Accel): ");
-    for (int i = 0; i < 6; i++) {
-        Serial.print(buf[i], HEX);
-        Serial.print(" ");
-    }
-    Serial.println();
+    // uint8_t buf[6];
+    // readRegisters(0x00, buf, 3);
+    // readRegisters(0x0D, buf + 3, 3);
+    // Serial.print("Self-test raw data(Gyro, Accel): ");
+    // for (int i = 0; i < 6; i++) {
+    //     Serial.print(buf[i], HEX);
+    //     Serial.print(" ");
+    // }
+    // Serial.println();
 
-    Serial.print("Gryo Self Test reg: ");
-    Serial.println(readRegister(0x1C));
+    // Serial.print("Gryo Self Test reg: ");
+    // Serial.println(readRegister(0x1C));
 
 
 #ifdef USE_CALIBRATE_MPU9250
@@ -180,6 +180,8 @@ void MotionData::readRegisters(uint8_t reg, uint8_t* buffer, uint8_t length) {
 void MotionData::readAccel(float &ax, float &ay, float &az) {
     uint8_t buf[6];
     readRegisters(MPU9250_ACCEL_XOUT_H, buf, 6);
+
+#ifdef MOTIONDATA_DEBUG
     // debugging print buf values
     Serial.print("Accel raw: ");
     for (int i = 0; i < 6; i++) {
@@ -187,6 +189,7 @@ void MotionData::readAccel(float &ax, float &ay, float &az) {
         Serial.print(" ");
     }
     Serial.println();
+#endif // MOTIONDATA_DEBUG
 
     int16_t x = (buf[0] << 8) | buf[1];
     int16_t y = (buf[2] << 8) | buf[3];
@@ -199,6 +202,8 @@ void MotionData::readAccel(float &ax, float &ay, float &az) {
 void MotionData::readGyro(float &gx, float &gy, float &gz) {
     uint8_t buf[6];
     readRegisters(MPU9250_GYRO_XOUT_H, buf, 6);
+
+#ifdef MOTIONDATA_DEBUG
     // debugging print buf values
     Serial.print("Gyro raw: ");
     for (int i = 0; i < 6; i++) {
@@ -206,6 +211,7 @@ void MotionData::readGyro(float &gx, float &gy, float &gz) {
         Serial.print(" ");
     }
     Serial.println();
+#endif // MOTIONDATA_DEBUG
 
     int16_t x = (buf[0] << 8) | buf[1];
     int16_t y = (buf[2] << 8) | buf[3];
@@ -213,4 +219,16 @@ void MotionData::readGyro(float &gx, float &gy, float &gz) {
     gx = x / 131.0f - _gyroBiasX;
     gy = y / 131.0f - _gyroBiasY;
     gz = z / 131.0f - _gyroBiasZ;
+}
+
+void MotionData::readCalibration(float* bias) {
+    if (bias != nullptr) {
+        bias[0] = _accelBiasX;
+        bias[1] = _accelBiasY;
+        bias[2] = _accelBiasZ;
+        bias[3] = _gyroBiasX;
+        bias[4] = _gyroBiasY;
+        bias[5] = _gyroBiasZ;
+    }
+    return;
 }

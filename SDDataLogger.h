@@ -8,14 +8,17 @@
 class SDDataLogger {
 private:
     uint8_t chipSelect;
-    String fileName;
+    String filePrefix = "datalog_";
+    // String fileName = "default.txt";
     File file;
     bool fileOpen;
+    int logCount = 0;
+    int fileCount = 0;
 
 public:
     SDDataLogger(uint8_t csPin);
 
-    bool begin(const String& fileName = "datalog.txt");
+    bool begin();
     bool open(uint8_t mode = FILE_WRITE);
     bool setFileName(const String& fileName);
     bool log(const String& data);

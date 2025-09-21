@@ -8,7 +8,10 @@
 #define SD_CS_PIN 10
 #define MPU9250_CS_PIN 9
 #define RTC_OFFSET (9 * 3600) // GMT+9
+#define MAX_LOG_ENTRIES 1000
 
 #define USE_SOFT_SPI
+
+// #define USE_CALIBRATE_MPU9250
 
 #endif // ENV_

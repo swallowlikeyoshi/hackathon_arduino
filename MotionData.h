@@ -32,6 +32,7 @@ public:
     bool begin();
     void readAccel(float &ax, float &ay, float &az);
     void readGyro(float &gx, float &gy, float &gz);
+    void readCalibration(float* bias);
 
 private:
     uint8_t _csPin;
