@@ -3,12 +3,12 @@
 #include "GPSdata.h"
 #include "SDDataLogger.h"
 #include "MotionData.h"
-#include "RTC.h"
+// #include "RTC.h"
 
 GPSdata gpsData(GPS_RX_PIN, GPS_TX_PIN);
 SDDataLogger sdLogger(SD_CS_PIN);
 MotionData motionData(MPU9250_CS_PIN);
-RTC rtc("KT_GiGA_8C65", "0ac27xf296", 9 * 3600); // GMT+9
+// RTC rtc("KT_GiGA_8C65", "0ac27xf296", 9 * 3600); // GMT+9
 
 void setup() {
     delay(3000); // For serial monitor connection
@@ -18,7 +18,7 @@ void setup() {
 
     bool success = true;
     
-    if (gpsData.begin(GPS_BAUD)) {
+    if (gpsData.begin(GPS_BAUD, RTC_OFFSET)) {
         Serial.println("GPS initialized.");
     }
     else {
@@ -42,13 +42,13 @@ void setup() {
         success = false;
     }
 
-    if (rtc.begin()) {
-        Serial.println("RTC initialized and time synchronized.");
-    }
-    else {
-        Serial.println("RTC initialization failed!");
-        success = false;
-    }
+    // if (rtc.begin()) {
+    //     Serial.println("RTC initialized and time synchronized.");
+    // }
+    // else {
+    //     Serial.println("RTC initialization failed!");
+    //     success = false;
+    // }
 
     // if (!success) {
     //     Serial.println("One or more components failed to initialize. Check connections and try again.");
@@ -85,13 +85,13 @@ void loop() {
     Serial.print(gy); Serial.print(", ");
     Serial.println(gz);
 
-    // Get current time from RTC
-    rtc.update();
-    Serial.print("Current Time: ");
-    Serial.println(rtc.getFormattedTime());
+    // // Get current time from RTC
+    // rtc.update();
+    // Serial.print("Current Time: ");
+    // Serial.println(rtc.getFormattedTime());
 
     sdLogger.open();
-    String logEntry = rtc.getFormattedDateTime() + "," + 
+    String logEntry = gpsData.getFormattedDateTime() + "," + 
                       String(gpsData.latitude(), 6) + "," + 
                       String(gpsData.longitude(), 6) + "," +
                       String(ax) + "," + String(ay) + "," + String(az) + "," +

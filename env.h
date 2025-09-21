@@ -7,6 +7,7 @@
 #define GPS_TX_PIN 4 
 #define SD_CS_PIN 10
 #define MPU9250_CS_PIN 9
+#define RTC_OFFSET (9 * 3600) // GMT+9
 
 #define USE_SOFT_SPI
 
