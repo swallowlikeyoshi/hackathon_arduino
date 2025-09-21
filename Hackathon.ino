@@ -47,17 +47,13 @@ void setup() {
     }
 
     if (sdLogger.begin()) {
-        String safePrefix = gpsData.getFormattedDateTime().substring(0, 16);
-        safePrefix.replace(":", "-");
-        safePrefix.replace(" ", "_");
-        String filePrefix = safePrefix + "_log_";
-        Serial.println("Setting SD file prefix to: " + filePrefix);
-        if (sdLogger.setFileName(filePrefix)) {
-            Serial.println("SD log file created: " + filePrefix);
-        } else {
-            Serial.println("Failed to create SD log file");
-            success = false;
-        }
+        // String safePrefix = gpsData.getFormattedDateTime().substring(0, 16);
+        // safePrefix.replace(":", "-");
+        // safePrefix.replace(" ", "_");
+        // String filePrefix = safePrefix + "_log_";
+        // Serial.println("Setting SD file prefix to: " + filePrefix);
+        String filePrefix = "log";
+        sdLogger.setFileName(filePrefix);
         Serial.println("SD card initialized.");
     }
     else {
@@ -122,6 +118,7 @@ void loop() {
     Serial.print("Current Time: ");
     Serial.println(gpsData.getFormattedDateTime()); // YYYY-MM-DD HH:MM:SS
 
+    sdLogger.open();
     String logEntry = gpsData.getFormattedDateTime() + "," + 
                       String(gpsData.latitude(), 6) + "," + 
                       String(gpsData.longitude(), 6) + "," +
@@ -131,6 +128,7 @@ void loop() {
         Serial.println("Logged to SD: " + logEntry);
     } else {
         Serial.println("Failed to log to SD");
+        sdLogger.begin(); // Reinitialize SD card if logging fails
     }
 
     sdLogger.close();
