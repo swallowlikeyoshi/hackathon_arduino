@@ -15,7 +15,22 @@ bool isGPSInitialized = false;
 void setup() {
     delay(3000); // For serial monitor connection
 
+    pinMode(LED_BUILTIN, OUTPUT);
+
     Serial.begin(115200);
+
+#ifndef DEBUG_VERBOSE
+    bool success = true;
+    success = gpsData.begin(GPS_BAUD, RTC_OFFSET) && motionData.begin() && sdLogger.begin();
+    // if (!success) {
+    //     while (1) {
+    //         delay(1000);
+    //         digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); // Blink to indicate error
+    //     } // Halt
+    // }
+#endif // !DEBUG_VERBOSE
+
+#ifdef DEBUG_VERBOSE
     Serial.println("******** Setup Start ********");
 
     bool success = true;
@@ -77,22 +92,58 @@ void setup() {
     }
 
     Serial.println("******** Setup Complete ********");
+
+#endif // DEBUG_VERBOSE
 }
 
 void loop() {
-    Serial.println();
 
+#ifndef DEBUG_VERBOSE
+    gpsData.update();
+
+    float ax, ay, az;
+    motionData.readAccel(ax, ay, az);
+    float gx, gy, gz;
+    motionData.readGyro(gx, gy, gz);
+    float mx, my, mz;
+    motionData.readMag(mx, my, mz);
+
+    Serial.print(ax); Serial.print(" ");
+    Serial.print(ay); Serial.print(" ");
+    Serial.print(az); Serial.print(" ");
+    Serial.print(gx); Serial.print(" ");
+    Serial.print(gy); Serial.print(" ");
+    Serial.print(gz); Serial.print(" ");
+    Serial.print(mx); Serial.print(" ");
+    Serial.print(my); Serial.print(" ");
+    Serial.println(mz);
+
+    sdLogger.open();
+    String logEntry = gpsData.getFormattedDateTime() + "," +
+                        String(gpsData.latitude(), 6) + "," + 
+                        String(gpsData.longitude(), 6) + "," +
+                        String(ax) + "," + String(ay) + "," + String(az) + "," +
+                        String(gx) + "," + String(gy) + "," + String(gz);
+    if (sdLogger.log(logEntry)) {
+        // Logged successfully
+    } else {
+        sdLogger.begin(); // Reinitialize SD card if logging fails
+    }
+    sdLogger.close();
+#endif // !DEBUG_VERBOSE
+
+#ifdef DEBUG_VERBOSE
     gpsData.update();
     // gps 데이터가 준비될 때 까지 기다렸다가, 준비되면 시리얼로 출력하고 넘어가기
     // GPS는 1초에 한번씩 업데이트 되는데, 이를 기다리면 공백이 너무 커지게 된다.
-    if (!isGPSInitialized) {
-        while (!gpsData.locationUpdated()) {
-            Serial.println("Waiting for GPS location...");
-            gpsData.update();
-            delay(1000);
-        }
-        isGPSInitialized = true;
-    }
+    // if (!isGPSInitialized) {
+    //     while (!gpsData.locationUpdated()) {
+    //         Serial.println("Waiting for GPS location...");
+    //         gpsData.update();
+    //         delay(1000);
+    //     }
+    //     isGPSInitialized = true;
+    // }
     Serial.print("Latitude= ");
     Serial.print(gpsData.latitude(), 6);
     Serial.print(" Longitude= ");
@@ -100,13 +151,13 @@ void loop() {
 
     float ax, ay, az;
     motionData.readAccel(ax, ay, az);
+    float gx, gy, gz;
+    motionData.readGyro(gx, gy, gz);
+
     Serial.print("Accel: ");
     Serial.print(ax); Serial.print(", ");
     Serial.print(ay); Serial.print(", ");
     Serial.println(az);
-
-    float gx, gy, gz;
-    motionData.readGyro(gx, gy, gz);
     Serial.print("Gyro: ");
     Serial.print(gx); Serial.print(", ");
     Serial.print(gy); Serial.print(", ");
@@ -132,6 +183,7 @@ void loop() {
     }
 
     sdLogger.close();
+#endif // DEBUG_VERBOSE
 
-    delay(1000); // 1초당 10회 루프
+    delay(100); // 1초당 10회 루프
 }
