@@ -12,6 +12,8 @@
 
 #define USE_SOFT_SPI
 
-// #define USE_CALIBRATE_MPU9250
+#define USE_CALIBRATE_MPU9250
+
+// #define DEBUG_VERBOSE
 
 #endif // ENV_

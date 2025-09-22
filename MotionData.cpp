@@ -32,14 +32,16 @@ bool MotionData::begin() {
 
     // // Optional: Check WHO_AM_I
     uint8_t whoami = readRegister(MPU9250_WHO_AM_I);
-    // Serial.print("MPU9250 WHO_AM_I: 0x");
-    // Serial.println(whoami, HEX);
-    // if (whoami != 0x71) { // 0x71 is the expected value for MPU-9250
-    //     return false;
-    // }
+#ifdef DEBUG_VERBOSE
+    Serial.print("MPU9250 WHO_AM_I: 0x");
+    Serial.println(whoami, HEX);
+#endif // DEBUG_VERBOSE
+    if (whoami != 0x71) { // 0x71 is the expected value for MPU-9250
+        return false;
+    }
 
     // uint8_t buf[6];
-    // readRegisters(0x00, buf, 3);
+    // readRegisters(0x00, buf, 3)
     // readRegisters(0x0D, buf + 3, 3);
     // Serial.print("Self-test raw data(Gyro, Accel): ");
     // for (int i = 0; i < 6; i++) {
@@ -51,8 +53,16 @@ bool MotionData::begin() {
     // Serial.print("Gryo Self Test reg: ");
     // Serial.println(readRegister(0x1C));
 
+    // Initialize AK8963 (Magnetometer)
+    if (!initAK8963()) {
+        return false;
+    }
+
 
 #ifdef USE_CALIBRATE_MPU9250
+
+    Serial.println("Calibration starts in 3 seconds. Keep the device still.");
+    delay(3000);
 
     // Calibration: collect samples while device is still
     const int samples = 200;
@@ -87,6 +97,11 @@ bool MotionData::begin() {
     _gyroBiasX = (float)gyrX / samples / 131.0f;
     _gyroBiasY = (float)gyrY / samples / 131.0f;
     _gyroBiasZ = (float)gyrZ / samples / 131.0f;
+
+    Serial.println("Calobration magnetometer starts in 3 seconds. Move the device in figure-8 motion.");
+    delay(3000);
+
+    calibrateMag(300);
 
 #endif // USE_CALIBRATE_MPU9250
 
@@ -231,4 +246,124 @@ void MotionData::readCalibration(float* bias) {
         bias[5] = _gyroBiasZ;
     }
     return;
+}
+
+// 🔹 AK8963 초기화
+bool MotionData::initAK8963() {
+    // I2C Master Enable
+    writeRegister(MPU9250_USER_CTRL, 0x20);
+    delay(10);
+    writeRegister(MPU9250_I2C_MST_CTRL, 0x0D); // 400kHz I2C
+
+    // WHO_AM_I 확인
+    uint8_t whoami;
+    readAK8963Registers(AK8963_WHO_AM_I, &whoami, 1);
+    if (whoami != 0x48) return false; // AK8963 ID = 0x48
+
+    Serial.print("AK8963 WHO_AM_I: 0x");
+    Serial.println(whoami, HEX);
+
+    // Factory calibration 값 읽기
+    uint8_t rawData[3];
+    readAK8963Registers(AK8963_ASAX, rawData, 3);
+    _magAdjX = ((rawData[0] - 128) / 256.0f) + 1.0f;
+    _magAdjY = ((rawData[1] - 128) / 256.0f) + 1.0f;
+    _magAdjZ = ((rawData[2] - 128) / 256.0f) + 1.0f;
+
+    Serial.print("Mag Adjustment: ");
+    Serial.print(_magAdjX, 3); Serial.print(", ");
+    Serial.print(_magAdjY, 3); Serial.print(", ");
+    Serial.println(_magAdjZ, 3);
+
+    // Continuous measurement mode 2 (100 Hz, 16-bit)
+    writeAK8963Register(AK8963_CNTL1, 0x16);
+    delay(10);
+
+    return true;
+}
+
+// 🔹 AK8963 Register Write
+void MotionData::writeAK8963Register(uint8_t reg, uint8_t value) {
+    writeRegister(MPU9250_I2C_SLV0_ADDR, AK8963_I2C_ADDR);
+    writeRegister(MPU9250_I2C_SLV0_REG, reg);
+    writeRegister(MPU9250_I2C_SLV0_DO, value);
+    writeRegister(MPU9250_I2C_SLV0_CTRL, 0x81); // enable, 1 byte
+    delay(10);
+}
+
+// 🔹 안정화된 AK8963 레지스터 읽기
+void MotionData::readAK8963Registers(uint8_t reg, uint8_t* buffer, uint8_t len) {
+    if (len > 16) len = 16; // MPU9250 SLV0 최대 16바이트
+
+    // I2C 마스터 슬레이브 설정
+    writeRegister(MPU9250_I2C_SLV0_ADDR, 0x80 | AK8963_I2C_ADDR); // 읽기 모드
+    writeRegister(MPU9250_I2C_SLV0_REG, reg);
+    writeRegister(MPU9250_I2C_SLV0_CTRL, 0x80 | len); // Enable + 길이
+    delayMicroseconds(50); // 데이터 준비 시간
+
+    // EXT_SENS_DATA_00에서 실제 데이터 읽기
+    readRegisters(MPU9250_EXT_SENS_DATA_00, buffer, len);
+    delayMicroseconds(50);
+}
+
+// 🔹 안정화된 자력계 읽기
+void MotionData::readMag(float &mx, float &my, float &mz) {
+    uint8_t st1 = 0;
+
+    // 데이터 준비될 때까지 대기
+    do {
+        readAK8963Registers(AK8963_ST1, &st1, 1);
+    } while (!(st1 & 0x01));
+
+    uint8_t rawData[6];
+    readAK8963Registers(AK8963_HXL, rawData, 6);
+
+    // 16-bit 센서 값, HXL~HZH 순서
+    int16_t x = (rawData[1] << 8) | rawData[0];
+    int16_t y = (rawData[3] << 8) | rawData[2];
+    int16_t z = (rawData[5] << 8) | rawData[4];
+
+    // 단위 변환 및 보정 적용
+    mx = ((float)x * 0.15f * _magAdjX - _magBiasX) * _magScaleX;
+    my = ((float)y * 0.15f * _magAdjY - _magBiasY) * _magScaleY;
+    mz = ((float)z * 0.15f * _magAdjZ - _magBiasZ) * _magScaleZ;
+}
+
+void MotionData::calibrateMag(unsigned int samples) {
+    int16_t mag_max[3] = { -32767, -32767, -32767 };
+    int16_t mag_min[3] = { 32767, 32767, 32767 };
+
+    for (unsigned int i = 0; i < samples; i++) {
+        float mx, my, mz;
+        readMag(mx, my, mz);
+
+        if (mx == 0 && my == 0 && mz == 0) {
+            delay(10);
+            continue;
+        }
+
+        if (mx > mag_max[0]) mag_max[0] = mx;
+        if (my > mag_max[1]) mag_max[1] = my;
+        if (mz > mag_max[2]) mag_max[2] = mz;
+
+        if (mx < mag_min[0]) mag_min[0] = mx;
+        if (my < mag_min[1]) mag_min[1] = my;
+        if (mz < mag_min[2]) mag_min[2] = mz;
+
+        delay(20);
+    }
+
+    _magBiasX = (mag_max[0] + mag_min[0]) / 2.0f;
+    _magBiasY = (mag_max[1] + mag_min[1]) / 2.0f;
+    _magBiasZ = (mag_max[2] + mag_min[2]) / 2.0f;
+
+    float scaleX = (mag_max[0] - mag_min[0]) / 2.0f;
+    float scaleY = (mag_max[1] - mag_min[1]) / 2.0f;
+    float scaleZ = (mag_max[2] - mag_min[2]) / 2.0f;
+
+    float avg = (scaleX + scaleY + scaleZ) / 3.0f;
+
+    _magScaleX = avg / scaleX;
+    _magScaleY = avg / scaleY;
+    _magScaleZ = avg / scaleZ;
 }
