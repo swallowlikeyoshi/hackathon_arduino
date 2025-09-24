@@ -5,7 +5,6 @@ SDDataLogger::SDDataLogger(uint8_t csPin)
     : chipSelect(csPin), fileOpen(false) {}
 
 bool SDDataLogger::begin() {
-    // this->fileName = "datalog_" + String(fileCount) + ".txt";
     return SD.begin(chipSelect);
 }
 

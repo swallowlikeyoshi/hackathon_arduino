@@ -36,25 +36,17 @@ bool MotionData::begin() {
     Serial.print("MPU9250 WHO_AM_I: 0x");
     Serial.println(whoami, HEX);
 #endif // DEBUG_VERBOSE
-    if (whoami != 0x71) { // 0x71 is the expected value for MPU-9250
-        return false;
+
+#ifdef USE_AK8963
+
+    if (!initAK8963()) {
+        Serial.println("AK8963 initialization failed!");
+        // return false;
     }
 
-    // uint8_t buf[6];
-    // readRegisters(0x00, buf, 3)
-    // readRegisters(0x0D, buf + 3, 3);
-    // Serial.print("Self-test raw data(Gyro, Accel): ");
-    // for (int i = 0; i < 6; i++) {
-    //     Serial.print(buf[i], HEX);
-    //     Serial.print(" ");
-    // }
-    // Serial.println();
+#endif // USE_AK8963
 
-    // Serial.print("Gryo Self Test reg: ");
-    // Serial.println(readRegister(0x1C));
-
-    // Initialize AK8963 (Magnetometer)
-    if (!initAK8963()) {
+    if (whoami != 0x71) { // 0x71 is the expected value for MPU-9250
         return false;
     }
 

@@ -1,0 +1,209 @@
+#include "env.h"
+
+#include "GPSdata.h"
+#include "SDDataLogger.h"
+#include "MotionData.h"
+#include "led_matrix.h"
+// #include "RTC.h"
+
+#include <Arduino_LED_Matrix.h>
+
+GPSdata gpsData(GPS_RX_PIN, GPS_TX_PIN);
+SDDataLogger sdLogger(SD_CS_PIN);
+MotionData motionData(MPU9250_CS_PIN);
+// RTC rtc("KT_GiGA_8C65", "0ac27xf296", 9 * 3600); // GMT+9
+ArduinoLEDMatrix ledMatrix;
+
+bool isGPSInitialized = false;
+
+void setup() {
+    // delay(3000); // For serial monitor connection
+
+    ledMatrix.begin();
+    ledMatrix.loadWrapper(hackathon_led_matrix, sizeof(hackathon_led_matrix) / sizeof(hackathon_led_matrix[0]));
+    ledMatrix.renderFrame(LED_HI);
+    delay(2000);
+
+    for (int i = 0; i < 3; i++) {
+        ledMatrix.renderFrame(LED_1 + i);
+        pinMode(LED_BUILTIN, OUTPUT);
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(500);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(500);
+    }
+
+    Serial.begin(115200);
+
+    uint8_t errorState = 0;
+
+#ifndef DEBUG_VERBOSE
+    if (gpsData.begin(GPS_BAUD, RTC_OFFSET) != 0) errorState |= 0x04;
+    if (motionData.begin() != 0) errorState |= 0x02;
+    if (sdLogger.begin() != 0) errorState |= 0x01;
+    if (errorState == 0x07) {
+        digitalWrite(LED_BUILTIN, HIGH);
+    } else {
+        ledMatrix.renderFrame(LED_ERR);
+        while (1) {
+            if (errorState & 0x04) {
+                ledMatrix.renderFrame(LED_ERR_GPS);
+                delay(1000);
+            } 
+            if (errorState & 0x02) {
+                ledMatrix.renderFrame(LED_ERR_MPU);
+                delay(1000);
+            } 
+            if (errorState & 0x01) {
+                ledMatrix.renderFrame(LED_ERR_SD);
+                delay(1000);
+            }
+        } // Halt
+    }
+#endif // !DEBUG_VERBOSE
+
+#ifdef DEBUG_VERBOSE
+    Serial.println("******** Setup Start ********");
+
+    if (gpsData.begin(GPS_BAUD, RTC_OFFSET) != 0) errorState |= 0x04;
+    if (motionData.begin() != 0) errorState |= 0x02;
+    if (sdLogger.begin() != 0) errorState |= 0x01;
+    if (errorState == 0x07) {
+        float bias[6];
+        motionData.readCalibration(bias);
+        Serial.print("Accel Bias: ");
+        Serial.print(bias[0]); Serial.print(", ");
+        Serial.print(bias[1]); Serial.print(", ");
+        Serial.println(bias[2]);
+        Serial.print("Gyro Bias: ");
+        Serial.print(bias[3]); Serial.print(", ");
+        Serial.print(bias[4]); Serial.print(", ");
+        Serial.println(bias[5]);
+
+        digitalWrite(LED_BUILTIN, HIGH);
+    } else {
+        ledMatrix.renderFrame(LED_ERR);
+        Serial.println(errorState, BIN);
+        do {
+            if (!(errorState & 0x04)) {
+                Serial.println("GPS initialization failed!");
+                ledMatrix.renderFrame(LED_ERR_GPS);
+                delay(1000);
+            } 
+            if (!(errorState & 0x02)) {
+                Serial.println("MPU9250 initialization failed!");
+                ledMatrix.renderFrame(LED_ERR_MPU);
+                delay(1000);
+            } 
+            if (!(errorState & 0x01)) {
+                Serial.println("SD card initialization failed!");
+                ledMatrix.renderFrame(LED_ERR_SD);
+                delay(1000);
+            }
+        } while (0);
+    }
+
+    Serial.println("******** Setup Complete ********");
+
+#endif // DEBUG_VERBOSE
+}
+
+void loop() {
+
+ledMatrix.renderFrame(LED_WORKING_1);
+
+#ifndef DEBUG_VERBOSE
+    gpsData.update();
+
+    float ax, ay, az;
+    motionData.readAccel(ax, ay, az);
+    float gx, gy, gz;
+    motionData.readGyro(gx, gy, gz);
+    float mx, my, mz;
+    motionData.readMag(mx, my, mz);
+
+    Serial.print(ax); Serial.print(" ");
+    Serial.print(ay); Serial.print(" ");
+    Serial.print(az); Serial.print(" ");
+    Serial.print(gx); Serial.print(" ");
+    Serial.print(gy); Serial.print(" ");
+    Serial.print(gz); Serial.print(" ");
+    Serial.print(mx); Serial.print(" ");
+    Serial.print(my); Serial.print(" ");
+    Serial.println(mz);
+
+    sdLogger.open();
+    String logEntry = gpsData.getFormattedDateTime() + "," +
+                        String(gpsData.latitude(), 6) + "," + 
+                        String(gpsData.longitude(), 6) + "," +
+                        String(ax) + "," + String(ay) + "," + String(az) + "," +
+                        String(gx) + "," + String(gy) + "," + String(gz);
+    if (sdLogger.log(logEntry)) {
+        // Logged successfully
+    } else {
+        sdLogger.begin(); // Reinitialize SD card if logging fails
+    }
+    sdLogger.close();
+#endif // !DEBUG_VERBOSE
+
+#ifdef DEBUG_VERBOSE
+    gpsData.update();
+    // gps 데이터가 준비될 때 까지 기다렸다가, 준비되면 시리얼로 출력하고 넘어가기
+    // GPS는 1초에 한번씩 업데이트 되는데, 이를 기다리면 공백이 너무 커지게 된다.
+    // if (!isGPSInitialized) {
+    //     while (!gpsData.locationUpdated()) {
+    //         Serial.println("Waiting for GPS location...");
+    //         gpsData.update();
+    //         delay(1000);
+    //     }
+    //     isGPSInitialized = true;
+    // }
+    Serial.print("Latitude= ");
+    Serial.print(gpsData.latitude(), 6);
+    Serial.print(" Longitude= ");
+    Serial.println(gpsData.longitude(), 6);
+
+    float ax, ay, az;
+    motionData.readAccel(ax, ay, az);
+    float gx, gy, gz;
+    motionData.readGyro(gx, gy, gz);
+    float mx, my, mz;
+    motionData.readMag(mx, my, mz);
+
+    Serial.print("Accel: ");
+    Serial.print(ax); Serial.print(", ");
+    Serial.print(ay); Serial.print(", ");
+    Serial.println(az);
+    Serial.print("Gyro: ");
+    Serial.print(gx); Serial.print(", ");
+    Serial.print(gy); Serial.print(", ");
+    Serial.println(gz);
+    Serial.print("Mag: ");
+    Serial.print(mx); Serial.print(", ");
+    Serial.print(my); Serial.print(", ");
+    Serial.println(mz);
+
+    // // Get current time from RTC
+    // rtc.update();
+
+    Serial.print("Current Time: ");
+    Serial.println(gpsData.getFormattedDateTime()); // YYYY-MM-DD HH:MM:SS
+
+    sdLogger.open();
+    String logEntry = gpsData.getFormattedDateTime() + "," + 
+                      String(gpsData.latitude(), 6) + "," + 
+                      String(gpsData.longitude(), 6) + "," +
+                      String(ax) + "," + String(ay) + "," + String(az) + "," +
+                      String(gx) + "," + String(gy) + "," + String(gz);
+    if (sdLogger.log(logEntry)) {
+        Serial.println("Logged to SD: " + logEntry);
+    } else {
+        Serial.println("Failed to log to SD");
+        sdLogger.begin(); // Reinitialize SD card if logging fails
+    }
+
+    sdLogger.close();
+#endif // DEBUG_VERBOSE
+
+    delay(100); // 1초당 10회 루프
+}

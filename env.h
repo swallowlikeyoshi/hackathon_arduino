@@ -4,7 +4,7 @@
 #define SERIAL_BAUD 115200
 #define GPS_BAUD 9600L
 #define GPS_RX_PIN 3
-#define GPS_TX_PIN 4 
+#define GPS_TX_PIN 4
 #define SD_CS_PIN 10
 #define MPU9250_CS_PIN 9
 #define RTC_OFFSET (9 * 3600) // GMT+9
@@ -12,8 +12,9 @@
 
 #define USE_SOFT_SPI
 
-#define USE_CALIBRATE_MPU9250
+// #define USE_CALIBRATE_MPU9250
+#define USE_AK8963
 
-// #define DEBUG_VERBOSE
+#define DEBUG_VERBOSE
 
 #endif // ENV_

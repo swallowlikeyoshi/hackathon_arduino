@@ -1,3 +1,7 @@
 # ignore folder .vscode and build
 .vscode/
 build/
+.venv/
+
+.DS_Store
+*.csv
