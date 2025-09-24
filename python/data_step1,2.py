@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 # --- 코드 실행 전 설정 ---
 # 가지고 계신 실제 데이터 파일 경로를 지정해주세요.
 # 예: FILE_PATH = 'C:/Users/MyUser/Documents/my_real_data.csv'
-FILE_PATH = 'sensor_log_2025-09-25_01-24-02.csv'
+FILE_PATH = 'sensor_log_2025-09-25_02-58-05.csv'
 
 # --- 예제 데이터 생성 (수정됨) ---
 def create_dummy_data(filename):
