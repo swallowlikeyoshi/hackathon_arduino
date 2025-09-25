@@ -1,0 +1,140 @@
+/***************************************************************************
+* Example sketch for the MPU9250_WE library
+*
+* This sketch is modified to send data in the format expected by the Python server.
+* It sends a timestamp (uptime in seconds) instead of GPS coordinates.
+* It also includes logic to automatically reconnect if the server connection is lost.
+* ***************************************************************************/
+#include "env.h"
+#include "GPSdata.h"
+#include <WiFi.h>
+#include <MPU9250_WE.h>
+
+#define READOUT_DELAY 5 // about 50 Hz
+
+// --- Wi-Fi 및 서버 정보 (사용자 환경에 맞게 수정) ---
+const char* ssid = "hotspot";
+const char* password = "12341234";
+const char* server = "192.168.217.42"; // Python 서버가 실행되는 PC의 IP 주소
+const int port = 65000; // Python UDP.py 클래스에 설정된 포트 번호
+WiFiClient client;
+
+// --- MPU9250 설정 ---
+const int csPin = 10;
+bool useSPI = true;
+MPU9250_WE myMPU9250 = MPU9250_WE(&SPI, csPin, useSPI);
+
+// --- GPS 설정 ---
+GPSdata gpsData(GPS_RX_PIN, GPS_TX_PIN);
+
+
+void setup() {
+  Serial.begin(115200);
+  
+  // Wi-Fi 연결
+  connectToWiFi();
+
+  // 서버 연결
+  connectToServer();
+
+
+  // GPS 초기화
+  gpsData.begin(GPS_BAUD, RTC_OFFSET);
+
+  // MPU9250 초기화
+  if(!myMPU9250.init()){
+    Serial.println("MPU9250 does not respond");
+  } else {
+    Serial.println("MPU9250 is connected");
+  }
+  if(!myMPU9250.initMagnetometer()){
+    Serial.println("Magnetometer does not respond");
+  } else {
+    Serial.println("Magnetometer is connected");
+  }
+
+  // MPU9250 센서 자동 오프셋 보정
+  Serial.println("Position you MPU9250 flat and don't move it - calibrating...");
+  delay(1000);
+  myMPU9250.autoOffsets();
+  Serial.println("Done!");
+  
+  // 센서 세부 설정
+  myMPU9250.enableGyrDLPF();
+  myMPU9250.setGyrDLPF(MPU9250_DLPF_6);
+  myMPU9250.setSampleRateDivider(5);
+  myMPU9250.setGyrRange(MPU9250_GYRO_RANGE_250);
+  myMPU9250.setAccRange(MPU9250_ACC_RANGE_2G);
+  myMPU9250.enableAccDLPF(true);
+  myMPU9250.setAccDLPF(MPU9250_DLPF_6);
+  myMPU9250.setMagOpMode(AK8963_CONT_MODE_100HZ);
+  delay(200);
+}
+
+void loop() {
+  // 서버 연결이 끊겼는지 확인하고, 끊겼다면 재연결 시도
+  if (!client.connected()) {
+    Serial.println("Server connection lost. Reconnecting...");
+    connectToServer();
+  }
+
+  // 센서 데이터 읽기
+  xyzFloat gValue = myMPU9250.getGValues();
+  xyzFloat gyr = myMPU9250.getGyrValues();
+  xyzFloat magValue = myMPU9250.getMagValues();
+
+  // UDP.py가 기대하는 형식에 맞게 데이터 문자열 생성
+  // (time, ax, ay, az, gx, gy, gz, mx, my, mz)
+  
+  // 1. 시간 정보: millis()를 사용하여 부팅 후 경과 시간을 초 단위로 변환
+  float timestamp = millis() / 1000.0;
+
+  // 2. 10개 필드로 구성된 데이터 문자열 조합
+  String logString = String(timestamp, 4) + "," + // 소수점 4자리까지 시간 표현
+                    String(gValue.x) + "," +
+                    String(gValue.y) + "," +
+                    String(gValue.z) + "," +
+                    String(gyr.x) + "," +
+                    String(gyr.y) + "," +
+                    String(gyr.z) + "," +
+                    String(magValue.x) + "," +
+                    String(magValue.y) + "," +
+                    String(magValue.z) + "\n"; // 줄바꿈 문자 추가
+
+  // 연결된 서버로 데이터 전송
+  if (client.connected())
+  {
+    client.print(logString);
+    Serial.print("Sent data: ");
+    Serial.print(logString);
+  }
+
+  delay(READOUT_DELAY); 
+}
+
+// --- 유틸리티 함수 ---
+
+void connectToWiFi() {
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  delay(2000);
+  Serial.println("\nWiFi Connected!");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void connectToServer() {
+  while (!client.connected()) {
+    if (client.connect(server, port)) {
+      Serial.println("Connected to Python server!");
+    } else {
+      Serial.println("Connection failed. Retrying in 5 seconds...");
+      delay(5000);
+    }
+  }
+}

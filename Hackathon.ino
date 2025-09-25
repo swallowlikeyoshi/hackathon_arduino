@@ -1,203 +1,125 @@
-/***************************************************************************
-* Example sketch for the MPU9250_WE library
-*
-* This sketch shows how to get acceleration, gyroscocope, magnetometer and 
-* temperature data from the MPU9250 using SPI.
-* 
-* For further information visit my blog:
-*
-* https://wolles-elektronikkiste.de/mpu9250-9-achsen-sensormodul-teil-1  (German)
-* https://wolles-elektronikkiste.de/en/mpu9250-9-axis-sensor-module-part-1  (English)
-* 
-***************************************************************************/
-#include "env.h"
-
-#include "GPSdata.h"
-
 #include <WiFi.h>
+#include <WiFiUdp.h> // UDP 사용을 위한 라이브러리 추가
 #include <MPU9250_WE.h>
+#include "GPSdata.h"
+#include "env.h"
 
 #define READOUT_DELAY 20 // about 50 Hz
 
-// const char* ssid = "KT_GiGA_8C65";
-// const char* password = "0ac27xf296";
-// const char* server = "172.30.1.52";
+// --- Wi-Fi 및 서버 정보 (사용자 환경에 맞게 수정) ---
 const char* ssid = "hotspot";
 const char* password = "12341234";
-const char* server = "192.168.217.42";
-const int port = 65000;
-WiFiClient client;
+const char* serverIP = "10.250.172.42"; // Python 서버가 실행되는 PC의 IP 주소
+const int serverPort = 65001; // Python UDP 수신 포트
 
-const int csPin = 10;  // Chip Select Pin
-// const int mosiPin = 22;  // "MOSI" Pin
-// const int misoPin = 21;  // "MISO" Pin
-// const int sckPin = 16;  // SCK Pin
-bool useSPI = true;    // SPI use flag
+// --- WiFiUDP 객체 생성 ---
+WiFiUDP udp;
 
-/* There are two constructors for SPI: */
+const int csPin = 10;
+bool useSPI = true;
 MPU9250_WE myMPU9250 = MPU9250_WE(&SPI, csPin, useSPI);
-
 GPSdata gpsData(GPS_RX_PIN, GPS_TX_PIN);
 
-/* Use this one if you want to change the default SPI pins (only for ESP32 / STM32 so far): */
-// MPU9250_WE myMPU9250 = MPU9250_WE(&SPI, csPin, mosiPin, misoPin, sckPin, useSPI);
-
-/* Changing SPI pins on STM32 boards can be a bit diffcult - the following worked on a Nucleo-L432KC board:
-
-    const int csPin = D3;   
-    const int mosiPin = A6; 
-    const int misoPin = D10; 
-    const int sckPin = A1;
-    bool useSPI = true;    // SPI use flag
-    MPU9250_WE myMPU9250 = MPU9250_WE(&SPI, csPin, mosiPin, misoPin, sckPin, useSPI);
-
-   Or, using the same pins:
-    SPIClass mySPI(mosiPin, misoPin, sckPin); // don't pass the CS-Pin (=SSEL)
-    MPU9250_WE myMPU9250 = MPU9250_WE(&mySPI, csPin, useSPI);
-*/
+// 전송할 데이터를 담을 버퍼 (String 객체보다 훨씬 효율적)
+char packetBuffer[256]; 
 
 void setup() {
-  
   Serial.begin(115200);
-  // MAC 주소 출력
-  Serial.print("MAC address: ");
 
-  uint8_t macAddr[6];
-  WiFi.macAddress(macAddr);
-  for (int i = 0; i < 6; i++)
-  {
-    Serial.print(macAddr[i], HEX); Serial.print(":");
-  }
-  Serial.println();
-  
+  // Wi-Fi 연결
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(1000);
-    Serial.println("Connecting WiFi...");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
   }
-  delay(2000);
-  Serial.println("WiFi Connected!");
+  delay(3000);
+  Serial.println("\nWiFi Connected!");
+  Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
-  if (client.connect(server, port)) {
-    Serial.println("Connected to Python server!");
+  // UDP 통신 시작
+  if (udp.begin(serverPort)) {
+      Serial.println("UDP communication started");
   } else {
-    Serial.println("Connection failed.");
+      Serial.println("Failed to start UDP");
   }
 
+  // GPS 및 MPU9250 센서 초기화 (기존과 동일)
   gpsData.begin(GPS_BAUD, RTC_OFFSET);
 
-  if(!myMPU9250.init()){
+  if (!myMPU9250.init()) {
     Serial.println("MPU9250 does not respond");
-  }
-  else{
+  } else {
     Serial.println("MPU9250 is connected");
   }
-  if(!myMPU9250.initMagnetometer()){
+  
+  if (!myMPU9250.initMagnetometer()) {
     Serial.println("Magnetometer does not respond");
-  }
-  else{
+  } else {
     Serial.println("Magnetometer is connected");
   }
-
-  /* Choose the SPI clock speed, default is 8 MHz 
-     This function must be used only after init(), not before */
-  //myMPU9250.setSPIClockSpeed(4000000);
 
   Serial.println("Position you MPU9250 flat and don't move it - calibrating...");
   delay(1000);
   myMPU9250.autoOffsets();
   Serial.println("Done!");
-  
-  //myMPU9250.setAccOffsets(-14240.0, 18220.0, -17280.0, 15590.0, -20930.0, 12080.0);
-  //myMPU9250.setGyrOffsets(45.0, 145.0, -105.0);
+
   myMPU9250.enableGyrDLPF();
-  //myMPU9250.disableGyrDLPF(MPU9250_BW_WO_DLPF_8800); // bandwdith without DLPF
   myMPU9250.setGyrDLPF(MPU9250_DLPF_6);
   myMPU9250.setSampleRateDivider(5);
   myMPU9250.setGyrRange(MPU9250_GYRO_RANGE_250);
   myMPU9250.setAccRange(MPU9250_ACC_RANGE_2G);
   myMPU9250.enableAccDLPF(true);
   myMPU9250.setAccDLPF(MPU9250_DLPF_6);
-  //myMPU9250.enableAccAxes(MPU9250_ENABLE_XYZ);
-  //myMPU9250.enableGyrAxes(MPU9250_ENABLE_XYZ);
   myMPU9250.setMagOpMode(AK8963_CONT_MODE_100HZ);
   delay(200);
 }
 
+// loop() 함수 위에 전역 변수로 추가
+unsigned long lastImuReadTime = 0;
+unsigned long lastGpsReadTime = 0;
+
+// 가장 최근에 읽은 GPS 데이터를 저장할 변수
+float lastLat = 0.0;
+float lastLon = 0.0;
+
 void loop() {
-  xyzFloat gValue = myMPU9250.getGValues();
-  xyzFloat gyr = myMPU9250.getGyrValues();
-  xyzFloat magValue = myMPU9250.getMagValues();
-  float temp = myMPU9250.getTemperature();
-  float resultantG = myMPU9250.getResultantG(gValue);
+  unsigned long currentTime = millis();
 
-  // Serial.println("Acceleration in g (x,y,z):");
-  // Serial.print(gValue.x);
-  // Serial.print("   ");
-  // Serial.print(gValue.y);
-  // Serial.print("   ");
-  // Serial.println(gValue.z);
-  // Serial.print("Resultant g: ");
-  // Serial.println(resultantG);
-
-  // Serial.println("Gyroscope data in degrees/s: ");
-  // Serial.print(gyr.x);
-  // Serial.print("   ");
-  // Serial.print(gyr.y);
-  // Serial.print("   ");
-  // Serial.println(gyr.z);
-
-  // Serial.println("Magnetometer Data in µTesla: ");
-  // Serial.print(magValue.x);
-  // Serial.print("   ");
-  // Serial.print(magValue.y);
-  // Serial.print("   ");
-  // Serial.println(magValue.z);
-
-  // Serial.print("Temperature in °C: ");
-  // Serial.println(temp);
-
-  // Serial.println("********************************************");
-
-  // gpsData.update();
-  // Serial.print(gpsData.latitude(), 6); Serial.print(",");
-  // Serial.print(gpsData.longitude(), 6); Serial.print(",");
-  // Serial.print(gValue.x); Serial.print(",");
-  // Serial.print(gValue.y); Serial.print(",");
-  // Serial.print(gValue.z); Serial.print(",");
-  // Serial.print(gyr.x); Serial.print(",");
-  // Serial.print(gyr.y); Serial.print(",");
-  // Serial.print(gyr.z); Serial.print(",");
-  // Serial.print(magValue.x); Serial.print(",");
-  // Serial.print(magValue.y); Serial.print(",");
-  // Serial.print(magValue.z); Serial.print("\n");
-
-  gpsData.update();
-
-  String logString = String(gpsData.latitude(), 6) + "," +
-                    String(gpsData.longitude(), 6) + "," +
-                    gValue.x + "," +
-                    gValue.y + "," +
-                    gValue.z + "," +
-                    gyr.x + "," +
-                    gyr.y + "," +
-                    gyr.z + "," +
-                    magValue.x + "," +
-                    magValue.y + "," +
-                    magValue.z + "\n";
-
-  if (client.connected())
-  {
-    client.print(logString);
-    Serial.print("Send data to server: ");
-    Serial.print(logString);
-  }
-  else
-  {
-    Serial.println("Disconnect from server.");
+  // --- 1. 느린 작업: GPS 데이터 읽기 (1초에 한 번) ---
+  if (currentTime - lastGpsReadTime >= 1000) {
+    lastGpsReadTime = currentTime;
+    gpsData.update();
+    // 가장 최근 GPS 값을 별도 변수에 저장
+    lastLat = gpsData.latitude();
+    lastLon = gpsData.longitude();
   }
 
-  delay(READOUT_DELAY); // about 30 Hz
+  // --- 2. 빠른 작업: IMU 데이터 읽고 UDP로 전송 (20ms마다) ---
+  if (currentTime - lastImuReadTime >= 20) {
+    lastImuReadTime = currentTime;
+    
+    // IMU 센서 데이터 읽기
+    xyzFloat gValue = myMPU9250.getGValues();
+    xyzFloat gyr = myMPU9250.getGyrValues();
+    xyzFloat magValue = myMPU9250.getMagValues();
+
+    // 데이터를 char 배열 버퍼에 포맷팅 (가장 최근 GPS 값 사용)
+    snprintf(packetBuffer, sizeof(packetBuffer), 
+             "%.6f,%.6f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f",
+             lastLat, lastLon, // 1초마다 갱신되는 GPS 값 사용
+             gValue.x, gValue.y, gValue.z,
+             gyr.x, gyr.y, gyr.z,
+             magValue.x, magValue.y, magValue.z);
+
+    // UDP 패킷 전송
+    udp.beginPacket(serverIP, serverPort);
+    udp.print(packetBuffer);
+    udp.endPacket();
+
+    // --- (디버깅 시에만 사용) ---
+    Serial.println(packetBuffer);
+  }
 }
