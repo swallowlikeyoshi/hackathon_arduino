@@ -19,9 +19,12 @@
 
 #define READOUT_DELAY 20 // about 50 Hz
 
-const char* ssid = "KT_GiGA_8C65";
-const char* password = "0ac27xf296";
-const char* server = "172.30.1.52";
+// const char* ssid = "KT_GiGA_8C65";
+// const char* password = "0ac27xf296";
+// const char* server = "172.30.1.52";
+const char* ssid = "hotspot";
+const char* password = "12341234";
+const char* server = "192.168.217.42";
 const int port = 65000;
 WiFiClient client;
 
