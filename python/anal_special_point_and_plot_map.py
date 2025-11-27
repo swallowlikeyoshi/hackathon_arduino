@@ -8,7 +8,7 @@ from scipy.signal import find_peaks
 # ---------------------------
 # 설정
 # ---------------------------
-INPUT_CSV_PATH = 'sensor_log_2025-09-25_14-15-35.csv' # 실제 파일명으로 변경하세요.
+INPUT_CSV_PATH = 'sensor_log_2025-09-26_06-17-39.csv' # 실제 파일명으로 변경하세요.
 OUTPUT_ZONES_CSV_PATH = 'special_zones_kalman.csv'
 OUTPUT_MAP_PATH = 'mobility_map_kalman.html'
 
@@ -40,6 +40,13 @@ KOREA_BOUNDS = {
 ZUPT_GYRO_THRESHOLD = 150
 # 데이터 샘플링 주기 (초 단위). 아두이노 코드의 delay와 관련. 50Hz -> 0.02초
 SAMPLING_PERIOD = 0.02
+
+# ▼▼▼ 동적 반지름(Dynamic Radius)을 위한 설정값 추가 ▼▼▼
+# points_count에 곱해질 값. 클수록 원이 더 빨리 커집니다.
+RADIUS_SCALING_FACTOR = 2
+# 아무리 작은 클러스터라도 지도에 표시될 최소 반지름 (미터)
+MIN_RADIUS = 3 
+# ▲▲▲ 여기까지 추가 ▲▲▲
 
 # ---------------------------
 # 0. 칼만 필터 적용 함수 (새로 추가)
@@ -286,20 +293,57 @@ def process_and_cluster_zones(feature_df):
     print(f"\n총 {len(zones_df)}개의 특이 구역(Zone)을 발견했습니다.\n{zones_df}")
     return zones_df
 
+# ---------------------------
+# 3. Folium으로 지도 시각화 (수정된 버전)
+# ---------------------------
 def create_map_with_zones(zones_df, original_df):
-    if zones_df is None or zones_df.empty: print("지도에 표시할 구역이 없어 시각화를 건너뜁니다."); return
-    map_center = [zones_df['lat'].iloc[0], zones_df['lon'].iloc[0]]
+    if zones_df is None or zones_df.empty: 
+        print("지도에 표시할 구역이 없어 시각화를 건너뜁니다.")
+        # 특이 지점이 없더라도 경로는 표시할 수 있도록 수정
+        if original_df is None or original_df.empty:
+            return
+        else:
+            map_center = [original_df['lat_filtered'].iloc[0], original_df['lon_filtered'].iloc[0]]
+    else:
+        map_center = [zones_df['lat'].iloc[0], zones_df['lon'].iloc[0]]
+        
     m = folium.Map(location=map_center, zoom_start=18)
-    points_raw = original_df[['lat', 'lon']].values.tolist()
-    folium.PolyLine(points_raw, color='gray', weight=2.5, opacity=0.8, popup='Raw GPS Path').add_to(m)
-    points_filtered = original_df[['lat_filtered', 'lon_filtered']].values.tolist()
-    folium.PolyLine(points_filtered, color='blue', weight=5, opacity=0.8, popup='Kalman Filtered Path').add_to(m)
-    for idx, row in zones_df.iterrows():
-        zone_type = row['type']
-        color = 'red' if 'Stair' in zone_type else 'orange'
-        popup_html = f"""<b>Type:</b> {zone_type}<br><b>Points Count:</b> {row['points_count']}"""
-        folium.Circle(location=[row['lat'], row['lon']], radius=ZONE_RADIUS, color=color,
-                      fill=True, fill_color=color, fill_opacity=0.3, popup=folium.Popup(popup_html, max_width=250)).add_to(m)
+
+    # 경로 표시 기능 (원본 GPS + 칼만 필터)
+    if original_df is not None and not original_df.empty:
+        points_raw = original_df[['lat', 'lon']].values.tolist()
+        folium.PolyLine(points_raw, color='gray', weight=2.5, opacity=0.8, popup='Raw GPS Path').add_to(m)
+        points_filtered = original_df[['lat_filtered', 'lon_filtered']].values.tolist()
+        folium.PolyLine(points_filtered, color='blue', weight=5, opacity=0.8, popup='Kalman Filtered Path').add_to(m)
+
+    # ▼▼▼ 여기가 핵심 수정 부분 ▼▼▼
+    # 특이 지점(Zone) 시각화 로직
+    if zones_df is not None and not zones_df.empty:
+        for idx, row in zones_df.iterrows():
+            zone_type = row['type']
+            color = 'red' if 'Stair' in zone_type else 'orange'
+            
+            # 동적 반지름 계산
+            # max()를 사용하여 최소 반지름보다 작아지지 않도록 보장
+            dynamic_radius = max(MIN_RADIUS, row['points_count'] * RADIUS_SCALING_FACTOR)
+            
+            popup_html = f"""
+            <b>Type:</b> {zone_type}<br>
+            <b>Points Count:</b> {row['points_count']}<br>
+            <b>Calculated Radius:</b> {dynamic_radius:.1f} m
+            """
+            
+            folium.Circle(
+                location=[row['lat'], row['lon']], 
+                radius=dynamic_radius, # 고정값 대신 동적 반지름 사용
+                color=color,
+                fill=True, 
+                fill_color=color, 
+                fill_opacity=0.4, 
+                popup=folium.Popup(popup_html, max_width=250)
+            ).add_to(m)
+    # ▲▲▲ 수정 완료 ▲▲▲
+
     m.save(OUTPUT_MAP_PATH)
     print(f"\n구역 지도를 '{OUTPUT_MAP_PATH}' 파일에 성공적으로 저장했습니다.")
 
